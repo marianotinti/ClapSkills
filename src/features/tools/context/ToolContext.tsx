@@ -36,6 +36,19 @@ interface ToolState {
 
 const ToolContext = createContext<ToolContextValue | undefined>(undefined);
 
+function cloneToolRecord(tool: ToolRecord, toolId = tool.id): ToolRecord {
+  return {
+    ...tool,
+    id: toolId,
+    files: { ...tool.files },
+    tags: [...tool.tags],
+  };
+}
+
+function cloneToolRecords(tools: ToolRecord[]): ToolRecord[] {
+  return tools.map((tool) => cloneToolRecord(tool));
+}
+
 function getSelectedToolId(tools: ToolRecord[], preferredToolId?: string): string {
   if (preferredToolId && tools.some((tool) => tool.id === preferredToolId)) {
     return preferredToolId;
@@ -45,7 +58,7 @@ function getSelectedToolId(tools: ToolRecord[], preferredToolId?: string): strin
 }
 
 function createInitialState(): ToolState {
-  const tools = loadStoredTools();
+  const tools = cloneToolRecords(loadStoredTools());
 
   return {
     tools,
@@ -53,14 +66,14 @@ function createInitialState(): ToolState {
   };
 }
 
-function replaceTool(tools: ToolRecord[], nextTool: ToolRecord): ToolRecord[] {
-  const existingToolIndex = tools.findIndex((tool) => tool.id === nextTool.id);
+function replaceTool(tools: ToolRecord[], toolId: string, nextTool: ToolRecord): ToolRecord[] {
+  const existingToolIndex = tools.findIndex((tool) => tool.id === toolId);
 
   if (existingToolIndex === -1) {
     return [...tools, nextTool];
   }
 
-  return tools.map((tool) => (tool.id === nextTool.id ? nextTool : tool));
+  return tools.map((tool) => (tool.id === toolId ? nextTool : tool));
 }
 
 export function ToolProvider({ children }: { children: ReactNode }) {
@@ -81,7 +94,7 @@ export function ToolProvider({ children }: { children: ReactNode }) {
       selectedToolId: toolState.selectedToolId,
       selectedTool,
       createTool: () => {
-        const nextTool = createEmptyToolRecord();
+        const nextTool = cloneToolRecord(createEmptyToolRecord());
 
         setToolState((current) => ({
           tools: [...current.tools, nextTool],
@@ -91,9 +104,11 @@ export function ToolProvider({ children }: { children: ReactNode }) {
         return nextTool;
       },
       saveTool: (tool) => {
+        const nextTool = cloneToolRecord(tool);
+
         setToolState((current) => ({
-          tools: replaceTool(current.tools, tool),
-          selectedToolId: tool.id,
+          tools: replaceTool(current.tools, nextTool.id, nextTool),
+          selectedToolId: nextTool.id,
         }));
       },
       updateTool: (toolId, updater) => {
@@ -104,10 +119,10 @@ export function ToolProvider({ children }: { children: ReactNode }) {
             return current;
           }
 
-          const updatedTool = updater(existingTool);
+          const updatedTool = cloneToolRecord(updater(cloneToolRecord(existingTool)), toolId);
 
           return {
-            tools: replaceTool(current.tools, updatedTool),
+            tools: replaceTool(current.tools, toolId, updatedTool),
             selectedToolId: updatedTool.id,
           };
         });
@@ -120,7 +135,7 @@ export function ToolProvider({ children }: { children: ReactNode }) {
             return current;
           }
 
-          const duplicatedTool = duplicateToolRecord(existingTool);
+          const duplicatedTool = cloneToolRecord(duplicateToolRecord(cloneToolRecord(existingTool)));
 
           return {
             tools: [...current.tools, duplicatedTool],
@@ -135,9 +150,11 @@ export function ToolProvider({ children }: { children: ReactNode }) {
         }));
       },
       replaceAllTools: (tools) => {
+        const nextTools = cloneToolRecords(tools);
+
         setToolState((current) => ({
-          tools: [...tools],
-          selectedToolId: getSelectedToolId(tools, current.selectedToolId),
+          tools: nextTools,
+          selectedToolId: getSelectedToolId(nextTools, current.selectedToolId),
         }));
       },
     }),

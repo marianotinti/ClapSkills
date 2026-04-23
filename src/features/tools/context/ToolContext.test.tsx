@@ -1,12 +1,20 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useEffect } from "react";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 
 import { ToolProvider, useTools } from "@/src/features/tools/context/ToolContext";
 import { createEmptyToolRecord, loadStoredTools, saveStoredTools } from "@/src/features/tools/lib/storage";
 
-function ToolHarness() {
-  const { createTool, selectedTool, selectedToolId, tools } = useTools();
+type ToolContextSnapshot = ReturnType<typeof useTools>;
+
+function ToolHarness({ onChange }: { onChange?: (value: ToolContextSnapshot) => void }) {
+  const toolsContext = useTools();
+  const { createTool, selectedTool, selectedToolId, tools } = toolsContext;
+
+  useEffect(() => {
+    onChange?.(toolsContext);
+  }, [onChange, toolsContext]);
 
   return (
     <div>
@@ -75,5 +83,55 @@ describe("ToolProvider", () => {
 
     expect(loadStoredTools()).toHaveLength(1);
     expect(loadStoredTools()[0]?.name).toBe("Untitled Tool");
+  });
+
+  test("updateTool keeps the original id when the updater returns a different one", () => {
+    const originalTool = createEmptyToolRecord({ name: "Original Tool" });
+    let toolsContext: ToolContextSnapshot | undefined;
+
+    saveStoredTools([originalTool]);
+
+    render(
+      <ToolProvider>
+        <ToolHarness onChange={(value) => { toolsContext = value; }} />
+      </ToolProvider>,
+    );
+
+    act(() => {
+      toolsContext?.updateTool(originalTool.id, (tool) => ({
+        ...tool,
+        id: "new-id",
+        name: "Renamed Tool",
+      }));
+    });
+
+    expect(screen.getByTestId("tool-count")).toHaveTextContent("1");
+    expect(screen.getByTestId("selected-tool-id")).toHaveTextContent(originalTool.id);
+    expect(loadStoredTools()).toHaveLength(1);
+    expect(loadStoredTools()[0]).toMatchObject({
+      id: originalTool.id,
+      name: "Renamed Tool",
+    });
+  });
+
+  test("state writes are insulated from external nested mutation", () => {
+    const externalTool = createEmptyToolRecord({ name: "External Tool" });
+    let toolsContext: ToolContextSnapshot | undefined;
+
+    render(
+      <ToolProvider>
+        <ToolHarness onChange={(value) => { toolsContext = value; }} />
+      </ToolProvider>,
+    );
+
+    act(() => {
+      toolsContext?.saveTool(externalTool);
+    });
+
+    externalTool.files["/App.tsx"] = "mutated outside state";
+    externalTool.tags.push("mutated-tag");
+
+    expect(toolsContext?.selectedTool?.files["/App.tsx"]).not.toBe("mutated outside state");
+    expect(toolsContext?.selectedTool?.tags).toEqual(["react-tool"]);
   });
 });
