@@ -1,5 +1,5 @@
 import { DEFAULT_TOOL_ENTRY_FILE, getDefaultToolFiles } from "@/src/features/tools/lib/defaultToolFiles";
-import type { ToolRecord } from "@/src/features/tools/types";
+import type { ToolFileMap, ToolRecord } from "@/src/features/tools/types";
 
 const TOOLS_STORAGE_KEY = "clapskills.tools";
 
@@ -19,6 +19,79 @@ function cloneTools(tools: ToolRecord[]): ToolRecord[] {
     files: { ...tool.files },
     tags: [...tool.tags],
   }));
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === "string";
+}
+
+function normalizeToolFiles(value: unknown): ToolFileMap | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const files = Object.fromEntries(
+    Object.entries(value).filter(
+      (entry): entry is [string, string] =>
+        typeof entry[0] === "string" && typeof entry[1] === "string",
+    ),
+  );
+
+  if (!isString(files[DEFAULT_TOOL_ENTRY_FILE])) {
+    return null;
+  }
+
+  return files;
+}
+
+function normalizeToolRecord(value: unknown): ToolRecord | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const files = normalizeToolFiles(record.files);
+  if (!files) {
+    return null;
+  }
+
+  if (
+    !isString(record.id) ||
+    !isString(record.name) ||
+    !isString(record.description) ||
+    !isString(record.prompt) ||
+    !isString(record.createdAt) ||
+    !isString(record.updatedAt)
+  ) {
+    return null;
+  }
+
+  const tags = Array.isArray(record.tags)
+    ? record.tags.filter((tag): tag is string => typeof tag === "string")
+    : [];
+
+  return {
+    id: record.id,
+    name: record.name,
+    description: record.description,
+    prompt: record.prompt,
+    files,
+    entryFile: DEFAULT_TOOL_ENTRY_FILE,
+    tags: tags.length > 0 ? tags : ["react-tool"],
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  };
+}
+
+function normalizeToolRecords(value: unknown): ToolRecord[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.flatMap((record) => {
+    const normalizedRecord = normalizeToolRecord(record);
+    return normalizedRecord ? [normalizedRecord] : [];
+  });
 }
 
 export function createEmptyToolRecord(options: CreateEmptyToolRecordOptions = {}): ToolRecord {
@@ -45,8 +118,8 @@ export function loadStoredTools(): ToolRecord[] {
   }
 
   try {
-    const parsed = JSON.parse(rawValue) as ToolRecord[];
-    return cloneTools(parsed);
+    const parsed = JSON.parse(rawValue);
+    return cloneTools(normalizeToolRecords(parsed));
   } catch {
     return [];
   }
@@ -75,6 +148,10 @@ export function exportTools(tools: ToolRecord[]): string {
 }
 
 export function importTools(serializedTools: string): ToolRecord[] {
-  const parsed = JSON.parse(serializedTools) as ToolRecord[];
-  return cloneTools(parsed);
+  try {
+    const parsed = JSON.parse(serializedTools);
+    return cloneTools(normalizeToolRecords(parsed));
+  } catch {
+    return [];
+  }
 }

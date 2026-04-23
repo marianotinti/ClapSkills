@@ -48,4 +48,19 @@ describe("tools storage", () => {
 
     expect(imported).toEqual(tools);
   });
+
+  test("returns an empty list for invalid import json", () => {
+    expect(importTools("{invalid-json")).toEqual([]);
+  });
+
+  test("keeps valid stored tools when one stored record is malformed", () => {
+    const validTool = createEmptyToolRecord({ name: "Stored Tool" });
+
+    localStorage.setItem(
+      "clapskills.tools",
+      JSON.stringify([validTool, { id: 123, tags: "bad-data" }]),
+    );
+
+    expect(loadStoredTools()).toEqual([validTool]);
+  });
 });
