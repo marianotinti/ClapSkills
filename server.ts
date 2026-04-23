@@ -60,7 +60,21 @@ The user wants to build an automation for ClapSkills MVP based on this request: 
 Your goal is to actively use the n8n tools to search for nodes, validate, and create a workflow from code. 
 IMPORTANT: When you use 'create_workflow_from_code', DO NOT return a response until you have successfully executed the tool.`;
 
-      let messages = [{ role: 'user', parts: [{ text: "Please create my workflow. Begin by searching for the nodes you need." }] }];
+      type AgentMessage = {
+        role: 'user' | 'model';
+        parts: Array<{
+          text?: string;
+          functionCall?: any;
+          functionResponse?: any;
+        }>;
+      };
+
+      let messages: AgentMessage[] = [
+        {
+          role: 'user',
+          parts: [{ text: "Please create my workflow. Begin by searching for the nodes you need." }],
+        },
+      ];
       
       // Agent loop (max 10 iterations)
       let finalResult = null;
