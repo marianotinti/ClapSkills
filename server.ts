@@ -11,6 +11,14 @@ import {
   resolveAnthropicConfig,
 } from "./src/lib/anthropicAgent.ts";
 import { normalizeToolResponse } from "./src/features/tools/server/normalizeToolResponse.ts";
+import { getPersistedSkill, listPersistedSkills, upsertPersistedSkill } from "./src/lib/skillStore.ts";
+import {
+  extractWorkflowCreationResult,
+  extractWorkflowExecutionResult,
+  normalizeWorkflowSkill,
+} from "./src/lib/workflowMetadata.ts";
+import type { WorkflowCreationResult } from "./src/lib/workflowMetadata.ts";
+import type { Skill } from "./src/types.ts";
 
 dotenv.config();
 
@@ -21,6 +29,41 @@ async function startServer() {
   const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
   app.use(express.json());
+
+  app.get("/api/skills", async (_req, res) => {
+    try {
+      const skills = await listPersistedSkills();
+      res.json({ skills });
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.get("/api/skills/:id", async (req, res) => {
+    try {
+      const skill = await getPersistedSkill(req.params.id);
+      if (!skill) {
+        return res.status(404).json({ error: "Skill not found." });
+      }
+      return res.json({ skill });
+    } catch (error) {
+      return res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.post("/api/skills", async (req, res) => {
+    try {
+      const skill = req.body?.skill as Skill | undefined;
+      if (!skill?.id || !skill.name) {
+        return res.status(400).json({ error: "Skill payload is required." });
+      }
+
+      const saved = await upsertPersistedSkill(skill);
+      return res.json({ skill: saved });
+    } catch (error) {
+      return res.status(500).json({ error: String(error) });
+    }
+  });
 
   app.post("/api/tools/generate", async (req, res) => {
     try {
@@ -152,7 +195,7 @@ IMPORTANT: When you use 'create_workflow_from_code', do not stop until the tool 
         { role: "user", content: "Please create my workflow. Begin by searching for the nodes you need." },
       ];
 
-      let finalResult: { workflowId?: string; name?: string } | null = null;
+      let finalResult: WorkflowCreationResult | null = null;
       for (let i = 0; i < 10; i += 1) {
         console.log(`[Agent Step ${i + 1}] Calling Anthropic (${model})...`);
         const response = await anthropic.messages.create({
@@ -181,20 +224,20 @@ IMPORTANT: When you use 'create_workflow_from_code', do not stop until the tool 
         for (const block of toolUseBlocks) {
           console.log(`[Agent] Calling tool: ${block.name}`);
           try {
-            const toolResult = (await callMcpTool(
+            const toolResult = await callMcpTool(
               mcpUrl,
               mcpKey,
               block.name,
               (block.input ?? {}) as Record<string, unknown>,
-            )) as { workflowId?: string; name?: string } | null;
+            );
             console.log(`[Agent] Tool ${block.name} returned successfully.`);
             toolResultContent.push({
               type: "tool_result",
               tool_use_id: block.id,
               content: JSON.stringify({ result: toolResult }),
             });
-            if (block.name === "create_workflow_from_code" && toolResult && typeof toolResult.workflowId === "string") {
-              finalResult = toolResult;
+            if (block.name === "create_workflow_from_code") {
+              finalResult = extractWorkflowCreationResult(toolResult);
             }
           } catch (e) {
             console.error(`[Agent] Tool error:`, e);
@@ -213,15 +256,35 @@ IMPORTANT: When you use 'create_workflow_from_code', do not stop until the tool 
       }
 
       if (finalResult) {
-        // Return a mock Skill object tailored with the execution n8n webhook ID
-        res.json({
-           success: true,
-           workflowId: finalResult.workflowId,
-           name: finalResult.name || "Generated Automation",
-           description: prompt,
-           inputs: [{ key: 'input_data', label: 'Input Parameter', type: 'text', required: true }],
-           steps: [{ id: '1', label: 'Trigger Workflow', type: 'trigger' }, { id: '2', label: 'Execute in n8n', type: 'tool' }]
-        });
+        let workflowDetails: unknown;
+        try {
+          workflowDetails = await callMcpTool(mcpUrl, mcpKey, "get_workflow_details", {
+            workflowId: finalResult.workflowId,
+          });
+        } catch (error) {
+          console.error("[Agent] Failed to fetch workflow details after creation:", error);
+          return res.status(502).json({
+            error: "Workflow was created in n8n but get_workflow_details failed.",
+            workflowId: finalResult.workflowId,
+          });
+        }
+
+        let skill: Skill;
+        try {
+          skill = normalizeWorkflowSkill(workflowDetails, {
+            prompt,
+            workflowUrl: finalResult.url,
+          });
+        } catch (error) {
+          console.error("[Agent] Failed to normalize workflow details:", error);
+          return res.status(502).json({
+            error: "Workflow details returned an unexpected shape.",
+            workflowId: finalResult.workflowId,
+          });
+        }
+
+        await upsertPersistedSkill(skill);
+        return res.json({ success: true, skill });
       } else {
         res.status(500).json({ error: "Agent failed to create the workflow after maximum iterations." });
       }
@@ -234,19 +297,32 @@ IMPORTANT: When you use 'create_workflow_from_code', do not stop until the tool 
 
   app.post("/api/mcp/execute", async (req, res) => {
     try {
-      const { workflowId, inputs } = req.body;
+      const { workflowId, inputs, skillId } = req.body;
       const mcpKey = process.env.N8N_MCP_SERVER_ACCESS_KEY;
       const mcpUrl = process.env.N8N_MCP_SERVER_URL;
+
+      let resolvedWorkflowId = typeof workflowId === "string" ? workflowId : "";
+      if (typeof skillId === "string" && skillId.trim()) {
+        const persistedSkill = await getPersistedSkill(skillId);
+        if (!persistedSkill?.n8nWorkflowId) {
+          return res.status(404).json({ error: "Persisted skill workflow not found." });
+        }
+        resolvedWorkflowId = persistedSkill.n8nWorkflowId;
+      }
+
+      if (!resolvedWorkflowId) {
+        return res.status(400).json({ error: "workflowId or skillId is required." });
+      }
       
-      if (workflowId.startsWith("mock_") || !mcpKey || !mcpUrl) {
+      if (resolvedWorkflowId.startsWith("mock_") || !mcpKey || !mcpUrl) {
          console.warn("Running mock execution for shared MVP demo...");
          await new Promise(resolve => setTimeout(resolve, 3000));
          return res.json({ success: true, executionId: `exec_${Date.now()}`, status: "completed" });
       }
 
-      console.log(`Executing workflow ${workflowId}...`);
+      console.log(`Executing workflow ${resolvedWorkflowId}...`);
       const executionResult = await callMcpTool(mcpUrl, mcpKey, "execute_workflow", {
-        workflowId,
+        workflowId: resolvedWorkflowId,
         executionMode: "manual",
         inputs: {
            type: "webhook",
@@ -256,8 +332,13 @@ IMPORTANT: When you use 'create_workflow_from_code', do not stop until the tool 
            }
         }
       });
+
+      const normalizedExecution = extractWorkflowExecutionResult(executionResult);
+      if (!normalizedExecution) {
+        throw new Error("execute_workflow returned an unexpected result shape.");
+      }
       
-      return res.json({ success: true, executionId: executionResult.executionId, status: executionResult.status });
+      return res.json({ success: true, ...normalizedExecution });
     } catch (error) {
       console.error("API Error executing:", error);
       res.status(500).json({ error: String(error) });
@@ -267,7 +348,12 @@ IMPORTANT: When you use 'create_workflow_from_code', do not stop until the tool 
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        watch: {
+          ignored: ["**/data/skills.json"],
+        },
+      },
       appType: "spa",
     });
     app.use(vite.middlewares);

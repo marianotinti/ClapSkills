@@ -9,12 +9,39 @@ export interface SkillInput {
   options?: string[];
 }
 
-export type SkillStepType = 'trigger' | 'file_input' | 'transform' | 'ai' | 'api_call' | 'approval' | 'output';
+export type SkillStepType = 'trigger' | 'file_input' | 'transform' | 'ai' | 'api_call' | 'approval' | 'output' | 'tool';
 
 export interface SkillStep {
   id: string;
   label: string;
   type: SkillStepType;
+}
+
+export interface WorkflowNodeViewModel {
+  id: string;
+  label: string;
+  type: SkillStepType;
+  technicalType: string;
+  position?: {
+    x: number;
+    y: number;
+  };
+  detail?: string;
+}
+
+export interface WorkflowEdgeViewModel {
+  id: string;
+  sourceNodeId: string;
+  targetNodeId: string;
+  label?: string;
+}
+
+export interface WorkflowGraph {
+  id: string;
+  url?: string;
+  source: 'n8n' | 'mock';
+  nodes: WorkflowNodeViewModel[];
+  edges: WorkflowEdgeViewModel[];
 }
 
 export interface Skill {
@@ -32,6 +59,7 @@ export interface Skill {
   runs: number;
   n8nWebhookUrl?: string;
   n8nWorkflowId?: string;
+  workflow?: WorkflowGraph;
 }
 
 export interface Execution {

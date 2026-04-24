@@ -1,20 +1,57 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState, ReactNode } from 'react';
 import { Skill } from '../types';
 import { mockSkills } from '../data/mockData';
+import { fetchPersistedSkills, upsertPersistedSkill } from '../lib/skillsApi';
 
 interface SkillContextType {
   skills: Skill[];
-  addSkill: (skill: Skill) => void;
+  loading: boolean;
+  addSkill: (skill: Skill) => Promise<Skill>;
   getSkill: (id: string) => Skill | undefined;
 }
 
 const SkillContext = createContext<SkillContextType | undefined>(undefined);
 
-export function SkillProvider({ children }: { children: ReactNode }) {
-  const [skills, setSkills] = useState<Skill[]>(mockSkills);
+function mergeSkills(persisted: Skill[], fallback: Skill[]) {
+  const persistedIds = new Set(persisted.map((skill) => skill.id));
+  return [...persisted, ...fallback.filter((skill) => !persistedIds.has(skill.id))];
+}
 
-  const addSkill = (skill: Skill) => {
-    setSkills((prev) => [skill, ...prev]);
+export function SkillProvider({ children }: { children: ReactNode }) {
+  const [persistedSkills, setPersistedSkills] = useState<Skill[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadSkills() {
+      try {
+        const storedSkills = await fetchPersistedSkills();
+        if (active) {
+          setPersistedSkills(storedSkills);
+        }
+      } catch (error) {
+        console.error('Failed to load persisted skills:', error);
+      } finally {
+        if (active) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void loadSkills();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const skills = useMemo(() => mergeSkills(persistedSkills, mockSkills), [persistedSkills]);
+
+  const addSkill = async (skill: Skill) => {
+    const saved = await upsertPersistedSkill(skill);
+    setPersistedSkills((prev) => [saved, ...prev.filter((entry) => entry.id !== saved.id)]);
+    return saved;
   };
 
   const getSkill = (id: string) => {
@@ -22,7 +59,7 @@ export function SkillProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <SkillContext.Provider value={{ skills, addSkill, getSkill }}>
+    <SkillContext.Provider value={{ skills, loading, addSkill, getSkill }}>
       {children}
     </SkillContext.Provider>
   );

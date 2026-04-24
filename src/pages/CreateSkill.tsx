@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
-import { Bot, CheckCircle2, ChevronRight, Wand2, Zap, Save, Pencil, X, AlertCircle } from 'lucide-react';
+import { Bot, CheckCircle2, Wand2, Save, AlertCircle, ExternalLink } from 'lucide-react';
 import { useSkills } from '../context/SkillContext';
 import { Skill } from '../types';
 
@@ -14,6 +14,27 @@ export function CreateSkill() {
   
   const navigate = useNavigate();
   const { addSkill } = useSkills();
+
+  type GenerateSkillResponse = {
+    workflowId?: string;
+    name?: string;
+    description?: string;
+    tags?: string[];
+    pattern?: string;
+    inputs?: Skill['inputs'];
+    steps?: Skill['steps'];
+    outputDescription?: string;
+    draft?: {
+      workflowId?: string;
+      name?: string;
+      description?: string;
+      tags?: string[];
+      pattern?: string;
+      inputs?: Skill['inputs'];
+      steps?: Skill['steps'];
+      outputDescription?: string;
+    };
+  };
 
   const handleGenerate = async () => {
     if (!prompt.trim()) return;
@@ -41,24 +62,12 @@ export function CreateSkill() {
         throw new Error(`Failed to generate workflow. HTTP ${response.status}`);
       }
       
-      const data = await response.json();
+      const data = (await response.json()) as GenerateSkillResponse;
+      const generated = data.draft ?? data;
       clearInterval(stepInterval);
       setGenerationStep(4);
       
-      setDraft({
-        id: `s_n8n_${Date.now()}`,
-        name: data.name || 'Generated Automation',
-        description: data.description || prompt.slice(0, 100) + '...',
-        owner: 'M. Tinti',
-        tags: data.tags || ['n8n', 'Automation'],
-        pattern: data.pattern || 'custom',
-        sharedWith: ['My Team'],
-        inputs: data.inputs || [{ key: 'input_data', label: 'Input Data', type: 'text', required: true }],
-        steps: data.steps || [{ id: '1', label: 'Trigger', type: 'trigger' }, { id: '2', label: 'n8n Workflow', type: 'tool' }],
-        outputDescription: data.outputDescription || 'Automated output from n8n.',
-        status: 'draft',
-        runs: 0
-      });
+      setDraft(generated as Skill);
     } catch (err) {
       clearInterval(stepInterval);
       setError(err instanceof Error ? err.message : 'An error occurred during generation');
@@ -67,10 +76,10 @@ export function CreateSkill() {
     }
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (draft) {
-      addSkill({ ...draft, status: 'active' });
-      navigate(`/skill/${draft.id}`);
+      const saved = await addSkill({ ...draft, status: 'active' });
+      navigate(`/skill/${saved.id}`);
     }
   };
 
@@ -144,7 +153,7 @@ export function CreateSkill() {
                 <h4 className="font-bold text-sm">Failed to generate skill from n8n</h4>
                 <p className="text-sm mt-1">{error}</p>
                 <div className="mt-3 text-xs bg-red-100/50 p-2 rounded text-red-900 border border-red-200">
-                  <span className="font-bold">Tip:</span> Ensure you have set your <code className="font-mono bg-white px-1 py-0.5 rounded">VITE_N8N_WEBHOOK_URL</code> in your <code className="font-mono bg-white px-1 py-0.5 rounded">.env</code> file or Environment Secrets, and that the n8n webhook allows Cross-Origin requests (CORS).
+                  <span className="font-bold">Tip:</span> Verify <code className="font-mono bg-white px-1 py-0.5 rounded">ANTHROPIC_API_KEY</code>, <code className="font-mono bg-white px-1 py-0.5 rounded">N8N_MCP_SERVER_URL</code>, and <code className="font-mono bg-white px-1 py-0.5 rounded">N8N_MCP_SERVER_ACCESS_KEY</code> in <code className="font-mono bg-white px-1 py-0.5 rounded">.env</code>. This flow uses the backend MCP route, not the old direct webhook.
                 </div>
               </div>
             </motion.div>
@@ -230,6 +239,25 @@ export function CreateSkill() {
                     ))}
                   </div>
                 </div>
+
+                {draft.workflow?.nodes?.length ? (
+                  <div>
+                    <span className="block text-xs font-bold text-on-surface-variant uppercase tracking-wider mb-1">Read-only canvas</span>
+                    <p className="text-sm text-on-surface">
+                      {draft.workflow.nodes.length} nodes and {draft.workflow.edges.length} connections imported from n8n.
+                    </p>
+                    {draft.workflow.url && (
+                      <a
+                        href={draft.workflow.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-2 inline-flex items-center gap-1 text-sm font-semibold text-primary"
+                      >
+                        Open in n8n <ExternalLink size={14} />
+                      </a>
+                    )}
+                  </div>
+                ) : null}
               </div>
 
               <div className="flex gap-3 pt-4 border-t border-surface-variant">

@@ -1,14 +1,16 @@
 import { useParams, Link } from 'react-router-dom';
 import { useSkills } from '../context/SkillContext';
-import { Play, Copy, ArrowLeft, GripVertical, FileText, Database, Send, Zap, Bot, Mail } from 'lucide-react';
+import { Play, Copy, ArrowLeft, GripVertical, FileText, Database, Send, Zap, Bot, Mail, ExternalLink } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { SkillStep } from '../types';
+import { WorkflowCanvas } from '../components/skills/WorkflowCanvas';
 
 export function SkillDetail() {
   const { id } = useParams();
-  const { getSkill } = useSkills();
+  const { getSkill, loading } = useSkills();
   const skill = getSkill(id || '');
 
+  if (!skill && loading) return <div className="p-10 text-center">Loading skill...</div>;
   if (!skill) return <div className="p-10 text-center">Skill not found</div>;
 
   const getStepIcon = (type: string) => {
@@ -57,29 +59,35 @@ export function SkillDetail() {
         
         {/* Workflow Sequence */}
         <div className="lg:col-span-8 flex flex-col gap-6">
-          <h2 className="text-xl font-bold text-on-surface border-b border-surface-variant pb-2">Workflow Sequence</h2>
-          
-          <div className="relative flex flex-col gap-4 pl-4 border-l-2 border-dashed border-primary/30 py-2">
-            {skill.steps.map((step: SkillStep, index) => (
-              <div key={step.id} className="relative z-10 flex gap-4 bg-surface-container-lowest rounded-xl p-4 shadow-sm border border-surface-variant group hover:-translate-y-0.5 transition-transform ml-4">
-                
-                {/* Connecting node */}
-                <div className="absolute -left-[27px] top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-primary ring-4 ring-surface" />
+          <h2 className="text-xl font-bold text-on-surface border-b border-surface-variant pb-2">
+            {skill.workflow?.nodes?.length ? 'Workflow Canvas' : 'Workflow Sequence'}
+          </h2>
 
-                <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-surface-container text-primary">
-                  {getStepIcon(step.type)}
-                </div>
-                
-                <div className="flex-1">
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-xs font-bold text-primary uppercase tracking-wider">{step.type.replace('_', ' ')}</span>
-                    <GripVertical size={16} className="text-outline opacity-30" />
+          {skill.workflow?.nodes?.length ? (
+            <WorkflowCanvas nodes={skill.workflow.nodes} edges={skill.workflow.edges} />
+          ) : (
+            <div className="relative flex flex-col gap-4 pl-4 border-l-2 border-dashed border-primary/30 py-2">
+              {skill.steps.map((step: SkillStep) => (
+                <div key={step.id} className="relative z-10 flex gap-4 bg-surface-container-lowest rounded-xl p-4 shadow-sm border border-surface-variant group hover:-translate-y-0.5 transition-transform ml-4">
+                  
+                  {/* Connecting node */}
+                  <div className="absolute -left-[27px] top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-primary ring-4 ring-surface" />
+
+                  <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-surface-container text-primary">
+                    {getStepIcon(step.type)}
                   </div>
-                  <h3 className="text-base font-semibold text-on-surface">{step.label}</h3>
+                  
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-bold text-primary uppercase tracking-wider">{step.type.replace('_', ' ')}</span>
+                      <GripVertical size={16} className="text-outline opacity-30" />
+                    </div>
+                    <h3 className="text-base font-semibold text-on-surface">{step.label}</h3>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Sidebar */}
@@ -120,6 +128,23 @@ export function SkillDetail() {
                   ))}
                 </ul>
               </div>
+
+              {skill.n8nWorkflowId && (
+                <div>
+                  <span className="block text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">n8n Workflow</span>
+                  <p className="text-sm font-medium text-on-surface">{skill.n8nWorkflowId}</p>
+                  {skill.workflow?.url && (
+                    <a
+                      href={skill.workflow.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-2 inline-flex items-center gap-1 text-sm font-semibold text-primary"
+                    >
+                      Open in n8n <ExternalLink size={14} />
+                    </a>
+                  )}
+                </div>
+              )}
 
               <div>
                 <span className="block text-[11px] font-bold text-on-surface-variant uppercase tracking-wider mb-1">Usage</span>

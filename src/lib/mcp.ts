@@ -1,3 +1,22 @@
+export function parseMcpResponseText(rawText: string) {
+  const trimmed = rawText.trim();
+
+  if (!trimmed.startsWith("event:") && !trimmed.startsWith("data:")) {
+    return JSON.parse(trimmed);
+  }
+
+  const dataLines = trimmed
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => line.slice("data:".length).trimStart());
+
+  if (dataLines.length === 0) {
+    throw new Error("MCP SSE response did not include any data lines.");
+  }
+
+  return JSON.parse(dataLines.join("\n"));
+}
+
 export async function sendMcpRequest(url: string, key: string, method: string, params: any) {
   const res = await fetch(url, {
     method: "POST",
@@ -18,15 +37,10 @@ export async function sendMcpRequest(url: string, key: string, method: string, p
     throw new Error(`MCP Request failed: ${res.status} HTTP.`);
   }
 
-  let text = await res.text();
-  
-  // Clean up any SSE formatting that n8n might inject
-  if (text.includes("event: message\ndata: ")) {
-     text = text.trim().split("data: ")[1];
-  }
+  const text = await res.text();
   
   try {
-    return JSON.parse(text);
+    return parseMcpResponseText(text);
   } catch (err) {
     console.error("Failed to parse MCP response:", text);
     throw err;

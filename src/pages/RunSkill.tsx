@@ -7,13 +7,14 @@ import { Execution } from '../types';
 
 export function RunSkill() {
   const { id } = useParams();
-  const { getSkill } = useSkills();
+  const { getSkill, loading } = useSkills();
   const skill = getSkill(id || '');
 
   const [formData, setFormData] = useState<Record<string, string>>({});
   const [execution, setExecution] = useState<Execution | null>(null);
   const [simulatedProgress, setSimulatedProgress] = useState(0);
 
+  if (!skill && loading) return <div className="p-10 text-center">Loading skill...</div>;
   if (!skill) return <div className="p-10 text-center">Skill not found</div>;
 
   const handleInputChange = (key: string, value: string) => {
@@ -48,7 +49,7 @@ export function RunSkill() {
         const response = await fetch('/api/mcp/execute', {
            method: 'POST',
            headers: { 'Content-Type': 'application/json' },
-           body: JSON.stringify({ workflowId: mcpWorkflowId, inputs: formData })
+           body: JSON.stringify({ skillId: skill.id, workflowId: mcpWorkflowId, inputs: formData })
         });
         
         clearInterval(fallbackInterval);
