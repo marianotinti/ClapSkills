@@ -33,6 +33,25 @@ export function resolveAnthropicConfig(env: EnvLike): ResolvedAnthropicConfig {
   };
 }
 
+/**
+ * Parses a model reply that is JSON or JSON wrapped in markdown fences / leading prose.
+ */
+export function parseClaudeJsonObject(text: string): unknown {
+  const trimmed = text.trim();
+  const fence = /^```(?:json)?\s*([\s\S]*?)```/m.exec(trimmed);
+  if (fence) {
+    return JSON.parse(fence[1].trim());
+  }
+  const first = trimmed.indexOf("{");
+  if (first >= 0) {
+    const last = trimmed.lastIndexOf("}");
+    if (last > first) {
+      return JSON.parse(trimmed.slice(first, last + 1));
+    }
+  }
+  return JSON.parse(trimmed);
+}
+
 export function mapMcpToolsToAnthropicTools(
   tools: McpToolDefinition[]
 ): Tool[] {

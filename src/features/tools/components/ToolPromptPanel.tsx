@@ -2,6 +2,7 @@ import { AlertCircle, Sparkles } from "lucide-react";
 
 interface ToolPromptPanelProps {
   prompt: string;
+  isGenerating: boolean;
   onPromptChange: (prompt: string) => void;
   onGenerate: () => void;
   error?: string | null;
@@ -12,6 +13,7 @@ interface ToolPromptPanelProps {
 export function ToolPromptPanel({
   error = null,
   hasSelectedTool,
+  isGenerating,
   onGenerate,
   onPromptChange,
   prompt,
@@ -46,7 +48,7 @@ export function ToolPromptPanel({
         id="tool-prompt"
         value={prompt}
         onChange={(event) => onPromptChange(event.target.value)}
-        disabled={!hasSelectedTool}
+        disabled={!hasSelectedTool || isGenerating}
         placeholder={
           hasSelectedTool
             ? "Build a reusable React tool that..."
@@ -57,17 +59,17 @@ export function ToolPromptPanel({
 
       <div className="mt-4 flex items-center justify-between gap-4">
         <p className="text-xs text-on-surface-variant">
-          This shell stores the prompt on the selected tool. Generation wiring lands next.
+          The prompt is stored on the selected tool and used when you generate.
         </p>
 
         <button
           type="button"
           onClick={onGenerate}
-          disabled={!hasSelectedTool || !prompt.trim()}
+          disabled={!hasSelectedTool || !prompt.trim() || isGenerating}
           className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-on-primary shadow-lg shadow-primary/20 transition-all hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Sparkles size={16} />
-          Generate Tool
+          {isGenerating ? "Generating…" : "Generate Tool"}
         </button>
       </div>
     </section>

@@ -7,8 +7,10 @@ import Anthropic from "@anthropic-ai/sdk";
 import { fetchMcpTools, callMcpTool } from "./src/lib/mcp.ts";
 import {
   mapMcpToolsToAnthropicTools,
+  parseClaudeJsonObject,
   resolveAnthropicConfig,
 } from "./src/lib/anthropicAgent.ts";
+import { normalizeToolResponse } from "./src/features/tools/server/normalizeToolResponse.ts";
 
 dotenv.config();
 
@@ -20,6 +22,82 @@ async function startServer() {
 
   app.use(express.json());
 
+  app.post("/api/tools/generate", async (req, res) => {
+    try {
+      const { prompt } = req.body as { prompt?: string };
+
+      if (!prompt?.trim()) {
+        return res.status(400).json({ error: "Prompt is required." });
+      }
+
+      const env = process.env as Record<string, string | undefined>;
+      const anthropicCfg = resolveAnthropicConfig(env);
+
+      if (anthropicCfg.usedLegacyTypo) {
+        console.warn(
+          "[ClapSkills] ANTRHOPIC_API_KEY (typo) is set but ANTHROPIC_API_KEY is not; using legacy var.",
+        );
+      }
+
+      if (!anthropicCfg.apiKey) {
+        return res.json(
+          normalizeToolResponse({
+            name: "Mock Tool",
+            description: prompt,
+            files: {
+              "/App.tsx": `export default function App() {
+  return <div className="p-8 text-white">Mock tool for: ${prompt.replace(/`/g, "")}</div>;
+}`,
+            },
+          }),
+        );
+      }
+
+      const model = env.TOOLS_MODEL_NAME?.trim() || anthropicCfg.model;
+      const anthropic = new Anthropic({ apiKey: anthropicCfg.apiKey });
+      const system = `You generate reusable React MVP tools for ClapSkills.
+Return JSON only with this shape:
+{
+  "name": "Tool name",
+  "description": "Short summary",
+  "files": {
+    "/App.tsx": "export default function App() { ... }"
+  }
+}
+Rules:
+- Only generate /App.tsx and optional /components/*.tsx files
+- No external packages
+- Use React + Tailwind classes only
+- /App.tsx must default export a component`;
+
+      const response = await anthropic.messages.create({
+        model,
+        max_tokens: 8192,
+        system,
+        messages: [{ role: "user", content: prompt.trim() }],
+      });
+
+      const text = response.content.find(
+        (b): b is Anthropic.TextBlock => b.type === "text",
+      )?.text;
+
+      if (typeof text !== "string" || !text.trim()) {
+        return res.status(502).json({ error: "Model returned no text response." });
+      }
+
+      let parsed: unknown;
+      try {
+        parsed = parseClaudeJsonObject(text);
+      } catch {
+        return res.status(502).json({ error: "Model response was not valid JSON." });
+      }
+
+      return res.json(normalizeToolResponse(parsed));
+    } catch (error) {
+      return res.status(500).json({ error: String(error) });
+    }
+  });
+
   app.post("/api/mcp/generate", async (req, res) => {
     try {
       const { prompt } = req.body;
@@ -28,7 +106,16 @@ async function startServer() {
       const anthropicCfg = resolveAnthropicConfig(process.env as Record<string, string | undefined>);
 
       if (!mcpKey || !mcpUrl || !anthropicCfg.apiKey) {
-        console.warn("Missing backend credentials! Simulating generation for shared MVP demo...");
+        const missing: string[] = [];
+        if (!anthropicCfg.apiKey) {
+          missing.push("ANTHROPIC_API_KEY (or ANTRHOPIC_API_KEY)");
+        }
+        if (!mcpKey || !mcpUrl) {
+          missing.push("N8N_MCP_SERVER_URL / N8N_MCP_SERVER_ACCESS_KEY");
+        }
+        console.warn(
+          `[ClapSkills] Missing: ${missing.join(" + ")}. Simulating workflow generation for demo.`,
+        );
         await new Promise(resolve => setTimeout(resolve, 5500));
         res.json({
            success: true,
