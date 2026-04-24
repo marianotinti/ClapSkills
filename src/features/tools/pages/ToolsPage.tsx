@@ -1,5 +1,5 @@
 import { MonitorCog } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { ToolLibrarySidebar } from "@/src/features/tools/components/ToolLibrarySidebar";
 import { ToolPromptPanel } from "@/src/features/tools/components/ToolPromptPanel";
@@ -8,6 +8,10 @@ import { useTools } from "@/src/features/tools/context/ToolContext";
 export function ToolsPage() {
   const { selectedTool, updateTool } = useTools();
   const [generationError, setGenerationError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setGenerationError(null);
+  }, [selectedTool?.id]);
 
   const handlePromptChange = (prompt: string) => {
     setGenerationError(null);
