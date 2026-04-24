@@ -3,8 +3,12 @@ import { createServer as createViteServer } from "vite";
 import { fileURLToPath } from "url";
 import path from "path";
 import dotenv from "dotenv";
-import { GoogleGenAI } from "@google/genai";
+import Anthropic from "@anthropic-ai/sdk";
 import { fetchMcpTools, callMcpTool } from "./src/lib/mcp.ts";
+import {
+  mapMcpToolsToAnthropicTools,
+  resolveAnthropicConfig,
+} from "./src/lib/anthropicAgent.ts";
 
 dotenv.config();
 
@@ -21,9 +25,9 @@ async function startServer() {
       const { prompt } = req.body;
       const mcpKey = process.env.N8N_MCP_SERVER_ACCESS_KEY;
       const mcpUrl = process.env.N8N_MCP_SERVER_URL;
-      const geminiKey = process.env.GEMINI_API_KEY;
+      const anthropicCfg = resolveAnthropicConfig(process.env as Record<string, string | undefined>);
 
-      if (!mcpKey || !mcpUrl || !geminiKey) {
+      if (!mcpKey || !mcpUrl || !anthropicCfg.apiKey) {
         console.warn("Missing backend credentials! Simulating generation for shared MVP demo...");
         await new Promise(resolve => setTimeout(resolve, 5500));
         res.json({
@@ -45,82 +49,79 @@ async function startServer() {
 
       console.log("Fetching tools from n8n MCP...");
       const mcpTools = await fetchMcpTools(mcpUrl, mcpKey);
+      const anthropicTools = mapMcpToolsToAnthropicTools(
+        mcpTools as { name: string; description?: string; inputSchema?: { type?: string; properties?: Record<string, unknown>; required?: string[] } }[],
+      );
+      const anthropic = new Anthropic({ apiKey: anthropicCfg.apiKey });
+      const model = anthropicCfg.model;
 
-      // Convert MCP tools to Gemini function declarations
-      const geminiTools = mcpTools.map((t: any) => ({
-        name: t.name,
-        description: t.description,
-        parameters: t.inputSchema // Might need standardizing, but works for basic usage
-      }));
-
-      const ai = new GoogleGenAI({ apiKey: geminiKey });
-      
       const systemInstruction = `You are an n8n workflow expert. 
 The user wants to build an automation for ClapSkills MVP based on this request: "${prompt}".
 Your goal is to actively use the n8n tools to search for nodes, validate, and create a workflow from code. 
-IMPORTANT: When you use 'create_workflow_from_code', DO NOT return a response until you have successfully executed the tool.`;
+IMPORTANT: When you use 'create_workflow_from_code', do not stop until the tool has completed successfully.`;
 
-      let messages = [{ role: 'user', parts: [{ text: "Please create my workflow. Begin by searching for the nodes you need." }] }];
-      
-      // Agent loop (max 10 iterations)
-      let finalResult = null;
-      for (let i = 0; i < 10; i++) {
-        console.log(`[Agent Step ${i+1}] Calling Gemini...`);
-        const response: any = await ai.models.generateContent({
-          model: 'gemini-2.5-pro',
-          contents: messages as any,
-          config: {
-            systemInstruction,
-            tools: [{ functionDeclarations: geminiTools }]
-          }
+      type Msg = Anthropic.MessageParam;
+      const messages: Msg[] = [
+        { role: "user", content: "Please create my workflow. Begin by searching for the nodes you need." },
+      ];
+
+      let finalResult: { workflowId?: string; name?: string } | null = null;
+      for (let i = 0; i < 10; i += 1) {
+        console.log(`[Agent Step ${i + 1}] Calling Anthropic (${model})...`);
+        const response = await anthropic.messages.create({
+          model,
+          max_tokens: 8192,
+          system: systemInstruction,
+          tools: anthropicTools,
+          messages,
         });
 
-        const part = response.candidates?.[0]?.content?.parts?.[0];
-        
-        if (part?.functionCall) {
-          const fnCall = part.functionCall;
-          console.log(`[Agent] Calling tool: ${fnCall.name}`);
-          
-          messages.push({ role: 'model', parts: [{ functionCall: fnCall }] });
-          
+        messages.push({ role: "assistant", content: response.content });
+
+        const toolUseBlocks = response.content.filter(
+          (b): b is Anthropic.ToolUseBlock => b.type === "tool_use",
+        );
+        if (toolUseBlocks.length === 0) {
+          const text = response.content.find((b) => b.type === "text" && "text" in b);
+          console.log(
+            "[Agent] Model text (no tool):",
+            text && "text" in text ? (text as { text: string }).text : response.stop_reason,
+          );
+          break;
+        }
+
+        const toolResultContent: Anthropic.ToolResultBlockParam[] = [];
+        for (const block of toolUseBlocks) {
+          console.log(`[Agent] Calling tool: ${block.name}`);
           try {
-            const toolResult = await callMcpTool(mcpUrl, mcpKey, fnCall.name, fnCall.args);
-            console.log(`[Agent] Tool ${fnCall.name} returned successfully.`);
-            
-            messages.push({
-              role: 'user',
-              parts: [{
-                functionResponse: {
-                  name: fnCall.name,
-                  response: { result: toolResult }
-                }
-              }]
+            const toolResult = (await callMcpTool(
+              mcpUrl,
+              mcpKey,
+              block.name,
+              (block.input ?? {}) as Record<string, unknown>,
+            )) as { workflowId?: string; name?: string } | null;
+            console.log(`[Agent] Tool ${block.name} returned successfully.`);
+            toolResultContent.push({
+              type: "tool_result",
+              tool_use_id: block.id,
+              content: JSON.stringify({ result: toolResult }),
             });
-            
-            if (fnCall.name === 'create_workflow_from_code' && toolResult.workflowId) {
+            if (block.name === "create_workflow_from_code" && toolResult && typeof toolResult.workflowId === "string") {
               finalResult = toolResult;
-              break; 
             }
           } catch (e) {
             console.error(`[Agent] Tool error:`, e);
-            messages.push({
-              role: 'user',
-              parts: [{
-                functionResponse: {
-                  name: fnCall.name,
-                  response: { error: String(e) }
-                }
-              }]
+            toolResultContent.push({
+              type: "tool_result",
+              tool_use_id: block.id,
+              is_error: true,
+              content: String(e),
             });
           }
-        } else {
-          // Model returned text
-          console.log(`[Agent] Model says:`, part?.text);
-          if (finalResult) break;
-          // If the model stops calling tools before creating, break out to avoid infinite loops
-          if (i > 0 && !part?.functionCall) {
-             break;
-          }
+        }
+        messages.push({ role: "user", content: toolResultContent });
+        if (finalResult) {
+          break;
         }
       }
 
