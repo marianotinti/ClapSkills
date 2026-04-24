@@ -50,11 +50,11 @@ export function ToolPromptPanel({
         id="tool-prompt"
         value={prompt}
         onChange={(event) => onPromptChange(event.target.value)}
-        disabled={!hasSelectedTool || isGenerating}
+        disabled={isGenerating}
         placeholder={
           hasSelectedTool
             ? "Build a reusable React tool that..."
-            : "Create or select a tool to start writing its prompt."
+            : "Describe the first tool you want to create."
         }
         className="mt-3 h-40 w-full resize-none rounded-2xl border border-outline-variant bg-surface-container-lowest p-4 text-sm text-on-surface outline-none transition-all placeholder:text-on-surface-variant focus:border-primary/40 focus:ring-4 focus:ring-primary/10 disabled:cursor-not-allowed disabled:bg-surface-container-low disabled:text-on-surface-variant"
       />
@@ -63,13 +63,15 @@ export function ToolPromptPanel({
         <p className="text-xs text-on-surface-variant">
           {isGenerating
             ? "The selected tool is generating. Wait for the updated result before editing again."
-            : "The prompt is stored on the selected tool and used when you generate."}
+            : hasSelectedTool
+              ? "The prompt is stored on the selected tool and used when you generate."
+              : "Your first generate action creates a new tool from this prompt."}
         </p>
 
         <button
           type="button"
           onClick={onGenerate}
-          disabled={!hasSelectedTool || !prompt.trim() || isGenerating}
+          disabled={!prompt.trim() || isGenerating}
           className="inline-flex items-center gap-2 rounded-xl bg-primary px-5 py-3 text-sm font-semibold text-on-primary shadow-lg shadow-primary/20 transition-all hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Sparkles size={16} />

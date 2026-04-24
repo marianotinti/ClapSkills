@@ -10,7 +10,18 @@ export async function generateTool(request: GenerateToolRequest): Promise<Genera
   });
 
   if (!response.ok) {
-    throw new Error(`Tool generation failed with status ${response.status}`);
+    let message = `Tool generation failed with status ${response.status}`;
+
+    try {
+      const payload = (await response.json()) as { error?: unknown };
+      if (typeof payload.error === "string" && payload.error.trim()) {
+        message = payload.error;
+      }
+    } catch {
+      // Fall back to the generic status-based message when the backend does not return JSON.
+    }
+
+    throw new Error(message);
   }
 
   return (await response.json()) as GenerateToolResponse;

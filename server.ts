@@ -150,17 +150,10 @@ async function startServer() {
       }
 
       if (!anthropicCfg.apiKey) {
-        return res.json(
-          normalizeToolResponse({
-            name: "Mock Tool",
-            description: prompt,
-            files: {
-              "/App.tsx": `export default function App() {
-  return <div className="p-8 text-white">Mock tool for: ${prompt.replace(/`/g, "")}</div>;
-}`,
-            },
-          }),
-        );
+        return res.status(503).json({
+          error:
+            "Tool generation is unavailable because ANTHROPIC_API_KEY is not configured on the server.",
+        });
       }
 
       const model = env.TOOLS_MODEL_NAME?.trim() || anthropicCfg.model;
@@ -179,6 +172,7 @@ Rules:
 - No external packages
 - Use React + Tailwind classes only
 - /App.tsx must default export a component
+- If you use React namespace APIs like React.useState or React.ReactNode, you must import React or the required React types/hooks explicitly
 - Always render a visible UI, not just hooks or logic
 - Include a clear visual container and usable controls for the task
 - Ensure the UI has visible contrast inside the Sandpack preview
@@ -196,8 +190,13 @@ Rules:
 
 The previous response was invalid for ClapSkills.
 Return corrected JSON only.
+Concrete validation failure:
+- ${lastError}
+
 Fixes required:
 - Do not reference JSX components unless you define or import them in the returned files.
+- Do not reference React namespace values or types unless you import them.
+- Prefer \`import { useState } from "react"\` over unimported \`React.useState\`.
 - Prefer native HTML tags like button, input, div, main, section.
 - /App.tsx must render successfully in a React + Tailwind sandbox with no external packages.
 - Do not remove the runnable entrypoint.

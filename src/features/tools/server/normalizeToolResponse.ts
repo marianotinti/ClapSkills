@@ -1,3 +1,4 @@
+import path from "path";
 import ts from "typescript";
 
 import { DEFAULT_TOOL_FILES } from "@/src/features/tools/lib/defaultToolFiles";
@@ -139,6 +140,87 @@ const VISIBLE_HTML_TAGS = new Set([
   "span",
 ]);
 
+const TOOL_VALIDATION_ROOT = path.posix.join(process.cwd().replace(/\\/g, "/"), ".tool-validation");
+
+function toVirtualToolPath(filePath: string): string {
+  return path.posix.join(TOOL_VALIDATION_ROOT, filePath.replace(/^\//, ""));
+}
+
+function fromVirtualToolPath(filePath: string): string {
+  return filePath.startsWith(`${TOOL_VALIDATION_ROOT}/`)
+    ? `/${filePath.slice(TOOL_VALIDATION_ROOT.length + 1)}`
+    : filePath;
+}
+
+function validateTypeScriptCompilation(files: ToolFileMap) {
+  const sourceEntries = Object.entries(files).filter(([filePath]) => /\.(t|j)sx?$/.test(filePath));
+  if (sourceEntries.length === 0) {
+    return;
+  }
+
+  const virtualFiles = new Map(
+    sourceEntries.map(([filePath, code]) => [toVirtualToolPath(filePath), code]),
+  );
+
+  const compilerOptions: ts.CompilerOptions = {
+    allowJs: true,
+    allowSyntheticDefaultImports: true,
+    esModuleInterop: true,
+    jsx: ts.JsxEmit.ReactJSX,
+    lib: ["lib.es2020.d.ts", "lib.dom.d.ts", "lib.dom.iterable.d.ts"],
+    module: ts.ModuleKind.NodeNext,
+    moduleResolution: ts.ModuleResolutionKind.NodeNext,
+    noEmit: true,
+    noImplicitAny: false,
+    skipLibCheck: true,
+    strict: false,
+    target: ts.ScriptTarget.ES2020,
+  };
+
+  const defaultHost = ts.createCompilerHost(compilerOptions, true);
+  const host: ts.CompilerHost = {
+    ...defaultHost,
+    fileExists: (fileName) => virtualFiles.has(fileName) || defaultHost.fileExists(fileName),
+    readFile: (fileName) => virtualFiles.get(fileName) ?? defaultHost.readFile(fileName),
+    getSourceFile: (fileName, languageVersion, onError, shouldCreateNewSourceFile) => {
+      const sourceText = virtualFiles.get(fileName);
+      if (typeof sourceText === "string") {
+        const scriptKind = fileName.endsWith(".tsx")
+          ? ts.ScriptKind.TSX
+          : fileName.endsWith(".jsx")
+            ? ts.ScriptKind.JSX
+            : fileName.endsWith(".js")
+              ? ts.ScriptKind.JS
+              : ts.ScriptKind.TS;
+
+        return ts.createSourceFile(fileName, sourceText, languageVersion, true, scriptKind);
+      }
+
+      return defaultHost.getSourceFile(fileName, languageVersion, onError, shouldCreateNewSourceFile);
+    },
+    getCurrentDirectory: () => process.cwd(),
+    writeFile: () => {},
+  };
+
+  const rootNames = [...virtualFiles.keys()];
+  const program = ts.createProgram(rootNames, compilerOptions, host);
+  const diagnostics = ts
+    .getPreEmitDiagnostics(program)
+    .filter((diagnostic) => diagnostic.category === ts.DiagnosticCategory.Error);
+
+  if (diagnostics.length === 0) {
+    return;
+  }
+
+  const firstDiagnostic = diagnostics[0];
+  const diagnosticPath = firstDiagnostic.file?.fileName
+    ? fromVirtualToolPath(firstDiagnostic.file.fileName)
+    : "/App.tsx";
+  const diagnosticMessage = ts.flattenDiagnosticMessageText(firstDiagnostic.messageText, "\n");
+
+  throw new Error(`Tool response failed TypeScript validation in ${diagnosticPath}: ${diagnosticMessage}`);
+}
+
 function validateRenderableUi(path: string, code: string) {
   const sourceFile = ts.createSourceFile(path, code, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   let hasVisibleUiElement = false;
@@ -183,6 +265,8 @@ export function normalizeToolResponse(value: unknown): GenerateToolResponse {
       }
     }
   }
+
+  validateTypeScriptCompilation(files);
 
   return {
     name: typeof record.name === "string" ? record.name : "Generated Tool",

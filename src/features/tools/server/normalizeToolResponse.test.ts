@@ -49,7 +49,9 @@ describe("normalizeToolResponse", () => {
       name: "Valid Calculator",
       description: "Defines its own button wrapper",
       files: {
-        "/App.tsx": `function Button(props: { children: React.ReactNode }) {
+        "/App.tsx": `import type { ReactNode } from "react";
+
+function Button(props: { children: ReactNode }) {
   return <button>{props.children}</button>;
 }
 
@@ -79,5 +81,25 @@ export default function App() {
         },
       }),
     ).toThrow("visible UI");
+  });
+
+  it("throws when App.tsx uses React namespace APIs without importing React", () => {
+    expect(() =>
+      normalizeToolResponse({
+        name: "Broken Calculator",
+        description: "Uses React.useState without importing React",
+        files: {
+          "/App.tsx": `export default function App() {
+  const [count, setCount] = React.useState(0);
+
+  return (
+    <main>
+      <button onClick={() => setCount(count + 1)}>{count}</button>
+    </main>
+  );
+}`,
+        },
+      }),
+    ).toThrow("TypeScript validation");
   });
 });

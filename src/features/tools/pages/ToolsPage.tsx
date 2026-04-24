@@ -9,7 +9,8 @@ import { DEFAULT_TOOL_ENTRY_FILE } from "@/src/features/tools/lib/defaultToolFil
 import { exportTools, importTools } from "@/src/features/tools/lib/storage";
 
 export function ToolsPage() {
-  const { replaceAllTools, saveTool, selectedTool, tools, updateTool } = useTools();
+  const { createTool, replaceAllTools, saveTool, selectedTool, tools, updateTool } = useTools();
+  const [draftPrompt, setDraftPrompt] = useState("");
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatingToolId, setGeneratingToolId] = useState<string | null>(null);
   const [generationError, setGenerationError] = useState<string | null>(null);
@@ -40,7 +41,12 @@ export function ToolsPage() {
   const handlePromptChange = (prompt: string) => {
     setGenerationError(null);
 
-    if (!selectedTool || isGeneratingSelectedTool) {
+    if (isGeneratingSelectedTool) {
+      return;
+    }
+
+    if (!selectedTool) {
+      setDraftPrompt(prompt);
       return;
     }
 
@@ -81,11 +87,23 @@ export function ToolsPage() {
   };
 
   const handleGenerate = async () => {
-    if (!selectedTool || !selectedTool.prompt.trim()) {
+    const prompt = selectedTool?.prompt ?? draftPrompt;
+
+    if (!prompt.trim()) {
       return;
     }
 
-    const base = selectedTool;
+    const base = selectedTool ?? createTool();
+    const timestamp = new Date().toISOString();
+
+    if (!selectedTool) {
+      saveTool({
+        ...base,
+        prompt,
+        updatedAt: timestamp,
+      });
+      setDraftPrompt("");
+    }
 
     setIsGenerating(true);
     setGeneratingToolId(base.id);
@@ -93,7 +111,7 @@ export function ToolsPage() {
 
     try {
       const result = await generateTool({
-        prompt: base.prompt,
+        prompt,
         tool: {
           name: base.name,
           description: base.description,
@@ -105,7 +123,7 @@ export function ToolsPage() {
         ...base,
         name: result.name,
         description: result.description,
-        prompt: base.prompt,
+        prompt,
         files: result.files,
         updatedAt: new Date().toISOString(),
       });
@@ -134,7 +152,7 @@ export function ToolsPage() {
         <div className="space-y-6">
           <ToolPromptPanel
             isGenerating={isGeneratingSelectedTool}
-            prompt={selectedTool?.prompt ?? ""}
+            prompt={selectedTool?.prompt ?? draftPrompt}
             onPromptChange={handlePromptChange}
             onGenerate={handleGenerate}
             error={generationError}
