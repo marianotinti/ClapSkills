@@ -11,7 +11,12 @@ import { exportTools, importTools } from "@/src/features/tools/lib/storage";
 export function ToolsPage() {
   const { replaceAllTools, saveTool, selectedTool, tools, updateTool } = useTools();
   const [isGenerating, setIsGenerating] = useState(false);
+  const [generatingToolId, setGeneratingToolId] = useState<string | null>(null);
   const [generationError, setGenerationError] = useState<string | null>(null);
+
+  const isGeneratingSelectedTool = Boolean(
+    isGenerating && selectedTool && selectedTool.id === generatingToolId,
+  );
 
   useEffect(() => {
     setGenerationError(null);
@@ -35,7 +40,7 @@ export function ToolsPage() {
   const handlePromptChange = (prompt: string) => {
     setGenerationError(null);
 
-    if (!selectedTool) {
+    if (!selectedTool || isGeneratingSelectedTool) {
       return;
     }
 
@@ -47,7 +52,7 @@ export function ToolsPage() {
   };
 
   const handleNameChange = (name: string) => {
-    if (!selectedTool) {
+    if (!selectedTool || isGeneratingSelectedTool) {
       return;
     }
 
@@ -59,7 +64,7 @@ export function ToolsPage() {
   };
 
   const handleCodeChange = (code: string) => {
-    if (!selectedTool) {
+    if (!selectedTool || isGeneratingSelectedTool) {
       return;
     }
 
@@ -80,12 +85,21 @@ export function ToolsPage() {
       return;
     }
 
+    const base = selectedTool;
+
     setIsGenerating(true);
+    setGeneratingToolId(base.id);
     setGenerationError(null);
 
     try {
-      const result = await generateTool(selectedTool.prompt);
-      const base = selectedTool;
+      const result = await generateTool({
+        prompt: base.prompt,
+        tool: {
+          name: base.name,
+          description: base.description,
+          files: base.files,
+        },
+      });
 
       saveTool({
         ...base,
@@ -101,6 +115,7 @@ export function ToolsPage() {
       );
     } finally {
       setIsGenerating(false);
+      setGeneratingToolId(null);
     }
   };
 
@@ -118,16 +133,25 @@ export function ToolsPage() {
 
         <div className="space-y-6">
           <ToolPromptPanel
-            isGenerating={isGenerating}
+            isGenerating={isGeneratingSelectedTool}
             prompt={selectedTool?.prompt ?? ""}
             onPromptChange={handlePromptChange}
             onGenerate={handleGenerate}
             error={generationError}
+            generationLabel={
+              selectedTool?.id === generatingToolId
+                ? `Generating ${selectedTool.name || "tool"}…`
+                : "Generating tool…"
+            }
             hasSelectedTool={Boolean(selectedTool)}
             selectedToolName={selectedTool?.name ?? null}
           />
 
-          <ToolWorkspace onCodeChange={handleCodeChange} onNameChange={handleNameChange} />
+          <ToolWorkspace
+            isGenerating={isGeneratingSelectedTool}
+            onCodeChange={handleCodeChange}
+            onNameChange={handleNameChange}
+          />
         </div>
       </div>
     </div>

@@ -84,4 +84,39 @@ describe("ToolsPage", () => {
 
     expect(screen.queryByText("Tool generation failed")).not.toBeInTheDocument();
   });
+
+  test("sends the selected tool context when generating", async () => {
+    const user = userEvent.setup();
+    vi.mocked(generateTool).mockResolvedValue({
+      name: "Generated Tool",
+      description: "Generated description",
+      files: {
+        "/App.tsx": "export default function App() { return <div>Generated</div>; }",
+      },
+    });
+
+    render(
+      <ToolProvider>
+        <ToolsPage />
+      </ToolProvider>,
+    );
+
+    await user.click(screen.getByRole("button", { name: "New Tool" }));
+    await user.clear(screen.getByLabelText(/Tool name/i));
+    await user.type(screen.getByLabelText(/Tool name/i), "Starter Tool");
+    await user.clear(screen.getByLabelText(/Tool prompt/i));
+    await user.type(screen.getByLabelText(/Tool prompt/i), "add a button");
+    await user.click(screen.getByRole("button", { name: /Generate Tool/i }));
+
+    expect(generateTool).toHaveBeenCalledWith({
+      prompt: "add a button",
+      tool: {
+        name: "Starter Tool",
+        description: "A React tool.",
+        files: {
+          "/App.tsx": expect.stringContaining("export default function App"),
+        },
+      },
+    });
+  });
 });

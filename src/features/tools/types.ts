@@ -1,5 +1,11 @@
 export type ToolFileMap = Record<string, string>;
 
+export interface ToolGenerationContext {
+  name: string;
+  description: string;
+  files: ToolFileMap;
+}
+
 export interface ToolRecord {
   id: string;
   name: string;
@@ -14,6 +20,7 @@ export interface ToolRecord {
 
 export interface GenerateToolRequest {
   prompt: string;
+  tool?: ToolGenerationContext;
 }
 
 export interface GenerateToolResponse {

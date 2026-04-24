@@ -3,11 +3,12 @@ import { useTools } from "@/src/features/tools/context/ToolContext";
 import { ToolEditorPreview } from "./ToolEditorPreview";
 
 export interface ToolWorkspaceProps {
+  isGenerating?: boolean;
   onCodeChange: (code: string) => void;
   onNameChange: (name: string) => void;
 }
 
-export function ToolWorkspace({ onCodeChange, onNameChange }: ToolWorkspaceProps) {
+export function ToolWorkspace({ isGenerating = false, onCodeChange, onNameChange }: ToolWorkspaceProps) {
   const { selectedTool } = useTools();
 
   if (!selectedTool) {
@@ -28,12 +29,18 @@ export function ToolWorkspace({ onCodeChange, onNameChange }: ToolWorkspaceProps
           id="tool-workspace-name"
           type="text"
           className="mt-2 w-full max-w-md rounded-xl border border-outline-variant bg-surface-container-lowest px-4 py-2.5 text-lg font-bold text-on-surface outline-none transition focus:border-primary/40 focus:ring-4 focus:ring-primary/10"
+          disabled={isGenerating}
           onChange={(event) => onNameChange(event.target.value)}
           value={selectedTool.name}
         />
         <p className="mt-2 text-sm text-on-surface-variant">{selectedTool.description}</p>
+        {isGenerating ? (
+          <p className="mt-3 text-sm font-medium text-primary">
+            Generating tool update for this workspace…
+          </p>
+        ) : null}
       </div>
-      <ToolEditorPreview onCodeChange={onCodeChange} tool={selectedTool} />
+      <ToolEditorPreview isGenerating={isGenerating} onCodeChange={onCodeChange} tool={selectedTool} />
     </section>
   );
 }

@@ -5,11 +5,13 @@ import type { ToolRecord } from "@/src/features/tools/types";
 
 interface ToolEditorPreviewProps {
   onCodeChange: (code: string) => void;
+  isGenerating?: boolean;
   tool: ToolRecord;
 }
 
-export function ToolEditorPreview({ onCodeChange, tool }: ToolEditorPreviewProps) {
+export function ToolEditorPreview({ isGenerating = false, onCodeChange, tool }: ToolEditorPreviewProps) {
   const appCode = tool.files["/App.tsx"] ?? "";
+  const previewKey = `${tool.id}:${JSON.stringify(tool.files)}`;
 
   return (
     <section className="grid grid-cols-1 gap-4 xl:grid-cols-2">
@@ -20,6 +22,7 @@ export function ToolEditorPreview({ onCodeChange, tool }: ToolEditorPreviewProps
         </div>
         <textarea
           className="h-[min(520px,60vh)] w-full resize-none bg-slate-950 p-4 font-mono text-sm text-slate-100 outline-none"
+          disabled={isGenerating}
           onChange={(event) => onCodeChange(event.target.value)}
           spellCheck={false}
           value={appCode}
@@ -28,6 +31,7 @@ export function ToolEditorPreview({ onCodeChange, tool }: ToolEditorPreviewProps
 
       <div className="overflow-hidden rounded-2xl border border-outline-variant bg-surface-container-lowest shadow-sm">
         <SandpackProvider
+          key={previewKey}
           customSetup={{
             dependencies: {
               react: "^19.0.0",

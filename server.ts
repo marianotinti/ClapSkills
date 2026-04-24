@@ -10,7 +10,9 @@ import {
   parseClaudeJsonObject,
   resolveAnthropicConfig,
 } from "./src/lib/anthropicAgent.ts";
+import { DEFAULT_TOOL_FILES } from "./src/features/tools/lib/defaultToolFiles.ts";
 import { normalizeToolResponse } from "./src/features/tools/server/normalizeToolResponse.ts";
+import type { ToolGenerationContext } from "./src/features/tools/types.ts";
 import { getPersistedSkill, listPersistedSkills, upsertPersistedSkill } from "./src/lib/skillStore.ts";
 import {
   extractWorkflowCreationResult,
@@ -23,6 +25,70 @@ import type { Skill } from "./src/types.ts";
 dotenv.config();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+function normalizeToolGenerationContext(value: unknown): ToolGenerationContext | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const record = value as Record<string, unknown>;
+  const filesValue = record.files;
+  if (!filesValue || typeof filesValue !== "object" || Array.isArray(filesValue)) {
+    return undefined;
+  }
+
+  const files = Object.fromEntries(
+    Object.entries(filesValue).filter(
+      (entry): entry is [string, string] =>
+        typeof entry[0] === "string" && typeof entry[1] === "string",
+    ),
+  );
+
+  if (typeof files["/App.tsx"] !== "string" || files["/App.tsx"].trim().length === 0) {
+    return undefined;
+  }
+
+  return {
+    name: typeof record.name === "string" ? record.name : "Untitled Tool",
+    description: typeof record.description === "string" ? record.description : "A React tool.",
+    files,
+  };
+}
+
+function isStarterToolContext(tool: ToolGenerationContext | undefined): boolean {
+  if (!tool) {
+    return true;
+  }
+
+  const fileEntries = Object.entries(tool.files);
+  if (fileEntries.length !== 1) {
+    return false;
+  }
+
+  return tool.files["/App.tsx"] === DEFAULT_TOOL_FILES["/App.tsx"];
+}
+
+function buildToolGenerationPrompt(prompt: string, tool: ToolGenerationContext | undefined): string {
+  if (!tool || isStarterToolContext(tool)) {
+    return `Create a new reusable React tool for this request:
+
+${prompt.trim()}`;
+  }
+
+  return `Edit the existing React tool using the user's instruction.
+
+User instruction:
+${prompt.trim()}
+
+Current tool metadata:
+Name: ${tool.name}
+Description: ${tool.description}
+
+Current files:
+${JSON.stringify(tool.files, null, 2)}
+
+Return the full updated tool. Preserve existing behavior unless the instruction requests a change.`;
+}
 
 async function startServer() {
   const app = express();
@@ -68,6 +134,7 @@ async function startServer() {
   app.post("/api/tools/generate", async (req, res) => {
     try {
       const { prompt } = req.body as { prompt?: string };
+      const tool = normalizeToolGenerationContext((req.body as { tool?: unknown }).tool);
 
       if (!prompt?.trim()) {
         return res.status(400).json({ error: "Prompt is required." });
@@ -111,31 +178,64 @@ Rules:
 - Only generate /App.tsx and optional /components/*.tsx files
 - No external packages
 - Use React + Tailwind classes only
-- /App.tsx must default export a component`;
+- /App.tsx must default export a component
+- Always render a visible UI, not just hooks or logic
+- Include a clear visual container and usable controls for the task
+- Ensure the UI has visible contrast inside the Sandpack preview
+- Prefer native HTML elements like button, input, textarea, select, div, main, section
+- If current tool files are provided, edit them instead of restarting from scratch
+- Preserve working behavior unless the user explicitly asks to change it
+- Always return the complete updated file map, not a patch`;
 
-      const response = await anthropic.messages.create({
-        model,
-        max_tokens: 8192,
-        system,
-        messages: [{ role: "user", content: prompt.trim() }],
-      });
+      let lastError = "Tool generation failed.";
 
-      const text = response.content.find(
-        (b): b is Anthropic.TextBlock => b.type === "text",
-      )?.text;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        const attemptPrompt = attempt === 0
+          ? buildToolGenerationPrompt(prompt, tool)
+          : `${buildToolGenerationPrompt(prompt, tool)}
 
-      if (typeof text !== "string" || !text.trim()) {
-        return res.status(502).json({ error: "Model returned no text response." });
+The previous response was invalid for ClapSkills.
+Return corrected JSON only.
+Fixes required:
+- Do not reference JSX components unless you define or import them in the returned files.
+- Prefer native HTML tags like button, input, div, main, section.
+- /App.tsx must render successfully in a React + Tailwind sandbox with no external packages.
+- Do not remove the runnable entrypoint.
+- Return a visibly rendered UI with usable controls and clear contrast.
+- Keep the UI complete and runnable.`;
+
+        const response = await anthropic.messages.create({
+          model,
+          max_tokens: 8192,
+          system,
+          messages: [{ role: "user", content: attemptPrompt }],
+        });
+
+        const text = response.content.find(
+          (b): b is Anthropic.TextBlock => b.type === "text",
+        )?.text;
+
+        if (typeof text !== "string" || !text.trim()) {
+          lastError = "Model returned no text response.";
+          continue;
+        }
+
+        let parsed: unknown;
+        try {
+          parsed = parseClaudeJsonObject(text);
+        } catch {
+          lastError = "Model response was not valid JSON.";
+          continue;
+        }
+
+        try {
+          return res.json(normalizeToolResponse(parsed));
+        } catch (error) {
+          lastError = error instanceof Error ? error.message : "Tool payload failed validation.";
+        }
       }
 
-      let parsed: unknown;
-      try {
-        parsed = parseClaudeJsonObject(text);
-      } catch {
-        return res.status(502).json({ error: "Model response was not valid JSON." });
-      }
-
-      return res.json(normalizeToolResponse(parsed));
+      return res.status(502).json({ error: lastError });
     } catch (error) {
       return res.status(500).json({ error: String(error) });
     }

@@ -8,6 +8,7 @@ interface ToolPromptPanelProps {
   error?: string | null;
   hasSelectedTool: boolean;
   selectedToolName?: string | null;
+  generationLabel?: string | null;
 }
 
 export function ToolPromptPanel({
@@ -18,6 +19,7 @@ export function ToolPromptPanel({
   onPromptChange,
   prompt,
   selectedToolName,
+  generationLabel = null,
 }: ToolPromptPanelProps) {
   return (
     <section className="rounded-2xl border border-outline-variant bg-surface-container-lowest p-6 shadow-sm">
@@ -30,7 +32,7 @@ export function ToolPromptPanel({
         </div>
 
         <div className="rounded-full border border-outline-variant bg-surface px-3 py-1 text-xs font-semibold text-on-surface-variant">
-          {selectedToolName ?? "No tool selected"}
+          {isGenerating ? generationLabel ?? "Generating tool…" : selectedToolName ?? "No tool selected"}
         </div>
       </div>
 
@@ -59,7 +61,9 @@ export function ToolPromptPanel({
 
       <div className="mt-4 flex items-center justify-between gap-4">
         <p className="text-xs text-on-surface-variant">
-          The prompt is stored on the selected tool and used when you generate.
+          {isGenerating
+            ? "The selected tool is generating. Wait for the updated result before editing again."
+            : "The prompt is stored on the selected tool and used when you generate."}
         </p>
 
         <button
