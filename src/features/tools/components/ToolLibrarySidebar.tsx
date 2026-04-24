@@ -1,9 +1,14 @@
-import { Copy, Download, PlusCircle, Wrench } from "lucide-react";
+import { Copy, Download, PlusCircle, Upload, Wrench } from "lucide-react";
 
 import { useTools } from "@/src/features/tools/context/ToolContext";
 import { cn } from "@/src/lib/utils";
 
-export function ToolLibrarySidebar() {
+export interface ToolLibrarySidebarProps {
+  onExport: () => void;
+  onImport: (file: File) => Promise<void>;
+}
+
+export function ToolLibrarySidebar({ onExport, onImport }: ToolLibrarySidebarProps) {
   const { createTool, duplicateTool, selectTool, selectedToolId, tools } = useTools();
 
   return (
@@ -85,12 +90,28 @@ export function ToolLibrarySidebar() {
 
       <button
         type="button"
-        disabled
-        className="mt-6 inline-flex items-center justify-center gap-2 rounded-xl border border-outline-variant bg-surface-container-low px-4 py-3 text-sm font-semibold text-on-surface-variant opacity-60"
+        onClick={onExport}
+        className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-xl border border-outline-variant bg-surface-container-low px-4 py-3 text-sm font-semibold text-on-surface transition-colors hover:border-primary/30 hover:text-primary"
       >
         <Download size={16} />
         Export JSON
       </button>
+      <label className="mt-3 flex w-full cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-outline-variant px-4 py-3 text-sm font-semibold text-on-surface transition-colors hover:border-primary/30 hover:text-primary">
+        <Upload size={16} />
+        Import JSON
+        <input
+          type="file"
+          accept="application/json,.json"
+          className="sr-only"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) {
+              void onImport(file);
+            }
+            event.target.value = "";
+          }}
+        />
+      </label>
     </aside>
   );
 }

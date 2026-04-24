@@ -5,6 +5,7 @@ import path from "path";
 import dotenv from "dotenv";
 import { GoogleGenAI } from "@google/genai";
 import { fetchMcpTools, callMcpTool } from "./src/lib/mcp.ts";
+import { normalizeToolResponse } from "./src/features/tools/server/normalizeToolResponse.ts";
 
 dotenv.config();
 
@@ -15,6 +16,75 @@ async function startServer() {
   const PORT = process.env.PORT ? parseInt(process.env.PORT) : 3000;
 
   app.use(express.json());
+
+  app.post("/api/tools/generate", async (req, res) => {
+    try {
+      const { prompt } = req.body as { prompt?: string };
+
+      if (!prompt?.trim()) {
+        return res.status(400).json({ error: "Prompt is required." });
+      }
+
+      const geminiKey = process.env.GEMINI_API_KEY;
+      const modelName = process.env.TOOLS_MODEL_NAME || "gemini-2.5-pro";
+
+      if (!geminiKey) {
+        return res.json(
+          normalizeToolResponse({
+            name: "Mock Tool",
+            description: prompt,
+            files: {
+              "/App.tsx": `export default function App() {
+  return <div className="p-8 text-white">Mock tool for: ${prompt.replace(/`/g, "")}</div>;
+}`,
+            },
+          }),
+        );
+      }
+
+      const ai = new GoogleGenAI({ apiKey: geminiKey });
+      const response: any = await ai.models.generateContent({
+        model: modelName,
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        config: {
+          responseMimeType: "application/json",
+          systemInstruction: `You generate reusable React MVP tools for ClapSkills.
+Return JSON only with this shape:
+{
+  "name": "Tool name",
+  "description": "Short summary",
+  "files": {
+    "/App.tsx": "export default function App() { ... }"
+  }
+}
+Rules:
+- Only generate /App.tsx and optional /components/*.tsx files
+- No external packages
+- Use React + Tailwind classes only
+- /App.tsx must default export a component`,
+        },
+      });
+
+      const text =
+        response.text ?? response.candidates?.[0]?.content?.parts?.[0]?.text;
+
+      if (typeof text !== "string" || !text.trim()) {
+        return res.status(502).json({ error: "Model returned no text response." });
+      }
+
+      let parsed: unknown;
+
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        return res.status(502).json({ error: "Model response was not valid JSON." });
+      }
+
+      return res.json(normalizeToolResponse(parsed));
+    } catch (error) {
+      return res.status(500).json({ error: String(error) });
+    }
+  });
 
   app.post("/api/mcp/generate", async (req, res) => {
     try {
