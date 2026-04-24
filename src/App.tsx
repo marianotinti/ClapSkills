@@ -10,6 +10,7 @@ import { Navbar } from './components/layout/Navbar';
 import { Home } from './pages/Home';
 import { Skills } from './pages/Skills';
 import { CreateSkill } from './pages/CreateSkill';
+import { ImportHub } from './pages/ImportHub';
 import { SkillDetail } from './pages/SkillDetail';
 import { RunSkill } from './pages/RunSkill';
 import { Profile } from './pages/Profile';
@@ -27,6 +28,7 @@ export default function App() {
                 <Route path="/skills" element={<Skills />} />
                 <Route path="/tools" element={<ToolsPage />} />
                 <Route path="/create" element={<CreateSkill />} />
+                <Route path="/imports" element={<ImportHub />} />
                 <Route path="/skill/:id" element={<SkillDetail />} />
                 <Route path="/skill/:id/run" element={<RunSkill />} />
                 <Route path="/profile" element={<Profile />} />

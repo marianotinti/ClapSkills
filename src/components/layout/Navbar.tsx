@@ -1,9 +1,10 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Zap, PlusCircle, Library, Search, Wrench } from 'lucide-react';
+import { Home, Zap, PlusCircle, Library, Search, Wrench, ArrowUpRight } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 export function Navbar() {
   const location = useLocation();
+  const isImportHubActive = location.pathname.startsWith('/imports');
 
   const navItems = [
     { name: 'Home', path: '/', icon: Home },
@@ -50,13 +51,23 @@ export function Navbar() {
         </div>
 
         <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-primary/5 border border-primary/20 rounded-full hidden lg:flex">
+          <Link
+            to="/imports"
+            aria-label="Coming Soon"
+            className={cn(
+              "hidden lg:flex items-center gap-2 rounded-full border px-3 py-1.5 transition-all duration-200",
+              isImportHubActive
+                ? "border-primary/30 bg-primary/10 text-primary shadow-sm shadow-primary/10"
+                : "border-primary/20 bg-primary/5 text-primary hover:border-primary/40 hover:bg-primary/10 hover:shadow-sm hover:shadow-primary/10"
+            )}
+          >
             <span className="text-[10px] font-bold text-primary uppercase tracking-widest">Coming Soon</span>
             <div className="flex -space-x-1.5">
               <div className="w-5 h-5 rounded-full border border-surface bg-surface-container-highest"></div>
               <div className="w-5 h-5 rounded-full border border-surface bg-outline"></div>
             </div>
-          </div>
+            <ArrowUpRight size={12} className="hidden xl:block" />
+          </Link>
 
           <div className="relative hidden sm:block ml-4">
             <Search className="absolute left-2.5 top-2 h-4 w-4 text-on-surface-variant" />
