@@ -2,10 +2,10 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
-import type { ComponentType } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { SkillProvider } from './context/SkillContext';
 import { ToolProvider } from './features/tools/context/ToolContext';
+import { ToolsPage } from './features/tools/pages/ToolsPage';
 import { Navbar } from './components/layout/Navbar';
 import { Home } from './pages/Home';
 import { Skills } from './pages/Skills';
@@ -13,9 +13,6 @@ import { CreateSkill } from './pages/CreateSkill';
 import { SkillDetail } from './pages/SkillDetail';
 import { RunSkill } from './pages/RunSkill';
 import { Profile } from './pages/Profile';
-
-// Temporary Task 2 placeholder until the Tools page shell lands in Task 3.
-const ToolsPage: ComponentType = () => null;
 
 export default function App() {
   return (

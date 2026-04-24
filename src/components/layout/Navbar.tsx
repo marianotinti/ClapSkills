@@ -1,5 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Zap, PlusCircle, Library, UserCircle, Search } from 'lucide-react';
+import { Home, Zap, PlusCircle, Library, Search, Wrench } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 export function Navbar() {
@@ -8,6 +8,7 @@ export function Navbar() {
   const navItems = [
     { name: 'Home', path: '/', icon: Home },
     { name: 'Library', path: '/skills', icon: Library },
+    { name: 'Tools', path: '/tools', icon: Wrench },
     { name: 'Create', path: '/create', icon: PlusCircle },
   ];
 
@@ -24,7 +25,11 @@ export function Navbar() {
 
           <nav className="hidden md:flex items-center gap-1">
             {navItems.map((item) => {
-              const isActive = location.pathname === item.path || (item.path === '/skills' && location.pathname.startsWith('/skill/'));
+              const isActive =
+                location.pathname === item.path ||
+                (item.path === '/skills' && location.pathname.startsWith('/skill/')) ||
+                (item.path === '/tools' && location.pathname.startsWith('/tools'));
+
               return (
                 <Link
                   key={item.path}
